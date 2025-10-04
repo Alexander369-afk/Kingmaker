@@ -1,0 +1,75 @@
+using Harmony12; // Assuming Harmony12 alias is used
+using Kingmaker.Blueprints.Classes.Spells;
+using Kingmaker.Utility;
+using System.Reflection;
+using System;
+using System.Collections.Generic; // Required for List<int>
+
+// NOTE: The Harmony12 alias is expected to be defined in your main mod file.
+
+namespace SwordSaintFixMod
+{
+    // Patching the method that returns the spell slot count for a given level
+    [Harmony12.HarmonyPatch(typeof(BlueprintSpellsTable), nameof(BlueprintSpellsTable.GetCount))]
+    public static class SwordSaintMinimalSpellFix
+    {
+        // The GUID for the BlueprintSpellsTable used by Magus/Sword Saint.
+        private const string SwordSaintSpellbookGuid = "b9fdc0b2d37eb9e4298f9163edf5ca82";
+
+        // This method runs AFTER the original GetCount method has calculated the result,
+        // allowing us to modify the final spell slot count (__result).
+        [Harmony12.HarmonyPostfix]
+        private static void Postfix(BlueprintSpellsTable __instance, int classLevel, int spellLevel, ref int? __result)
+        {
+            // 1. Filter: Only apply this patch to the specific Magus Spells Table.
+            if (!__instance.AssetGuid.Equals(SwordSaintSpellbookGuid))
+            {
+                return;
+            }
+
+            // Define the Spell Level we are fixing (Level 2). Index 2 corresponds to Spell Level 2.
+            const int TargetSpellLevelIndex = 2;
+            int correctionValue = 0; // Initialize correction value
+
+            // --- Consolidated Fix for Class Levels 5 and 6 ---
+
+            // 2. Filter by Spell Level and Class Level
+            if (spellLevel == TargetSpellLevelIndex)
+            {
+                // We determine the correction. Both Lvl 5 and Lvl 6 are missing exactly 1 final slot.
+                switch (classLevel)
+                {
+                    case 5:
+                    case 6:
+                        // Lvl 5 (0 -> 1 slot) and Lvl 6 (2 -> 3 slots) both need a +1 correction
+                        correctionValue = 1;
+                        break;
+                        // All other levels (7+) fall through, correctionValue remains 0, and no fix is applied.
+                }
+
+                // 3. Apply Correction directly to the calculated result if needed
+                if (correctionValue > 0)
+                {
+                    // This is the CRITICAL change: We ADD the correction directly to the result 
+                    // calculated by the original method (__result.Value). This correctly adjusts 
+                    // Lvl 6 from 2 slots to 3 slots.
+                    if (__result.HasValue)
+                    {
+                        __result = __result.Value + correctionValue;
+
+                        // Log the new calculation being performed
+                        UberDebug.Log($"[SwordSaintFixMod] Lvl {classLevel} Lvl 2 Fix: Applied +{correctionValue} correction to calculated result. Final Result: {__result.Value}");
+                    }
+                    else
+                    {
+                        // Fallback: If the original method somehow returned null, force the minimal expected value.
+                        __result = correctionValue;
+                        UberDebug.LogWarning($"[SwordSaintFixMod] Lvl {classLevel} Lvl 2 Fix: Original result was null. Forcing minimal result: {__result.Value}");
+                    }
+                }
+            }
+
+            
+        }
+    }
+}
