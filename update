@@ -1,0 +1,54 @@
+using Kingmaker.Blueprints.Classes.Spells;
+using Kingmaker.Utility;
+using System;
+using System.Collections.Generic;
+using System.Reflection;
+
+namespace SwordSaintFixMod
+{
+    [Harmony12.HarmonyPatch(typeof(BlueprintSpellsTable), nameof(BlueprintSpellsTable.GetCount))]
+    public static class SwordSaintMinimalSpellFix
+    {
+        private const string SwordSaintSpellbookGuid = "b9fdc0b2d37eb9e4298f9163edf5ca82";
+
+        // CRITICAL: We use the Harmony-compliant signature that is now working (no crash).
+        // This includes __instance (the spell table), classLevel/spellLevel (the inputs), and __result (the return value).
+        [Harmony12.HarmonyPostfix]
+        private static void Postfix(BlueprintSpellsTable __instance, int classLevel, int spellLevel, ref int? __result)
+        {
+            // 1. Filter by Spellbook GUID (only Magus/Sword Saint).
+            if (!__instance.AssetGuid.Equals(SwordSaintSpellbookGuid))
+            {
+                return;
+            }
+
+            // Define targets: Class Level 5 (1-based index) and Spell Level 2 (0-based index)
+            const int TargetClassLevel = 5;
+            const int TargetSpellLevelIndex = 2;
+
+            // NOTE: Blueprint array index is always Class Level - 1. 
+            // Since we are targeting Class Level 5, the array index is 4.
+            const int BlueprintArrayIndex = 4;
+
+
+            // 2. Surgical Targeting: We check the input parameters to only run the fix 
+            // when the game is asking for the Lvl 5, Lvl 2 spell slots.
+            if (classLevel == TargetClassLevel && spellLevel == TargetSpellLevelIndex)
+            {
+                // 3. Apply the working logic: Directly access the blueprint's raw data
+                // at the problematic cell (index 4, index 2) and force the result to be +1.
+                // This reliably overrides the original bugged calculation.
+                if (__instance.Levels.Length > BlueprintArrayIndex)
+                {
+                    var spellLevelEntry = __instance.Levels[BlueprintArrayIndex];
+                    if (spellLevelEntry != null && spellLevelEntry.Count.Length > TargetSpellLevelIndex)
+                    {
+                        __result = spellLevelEntry.Count[TargetSpellLevelIndex] + 1;
+                    }
+                }
+            }
+            // If the inputs don't match (e.g., Lvl 1 slots), the patch immediately exits 
+            // and the original function's result (__result) is returned unchanged.
+        }
+    }
+}
