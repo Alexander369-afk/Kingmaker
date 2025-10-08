@@ -1,0 +1,351 @@
+ static void createFrostBite2()
+ {
+     var icon = LoadIcons.Image2Sprite.Create(@"AbilityIcons/FrostBite.png");
+
+     // STEP 1: Build all the individual variants first.
+     var hold_charge_enchant_variant2 = CreateHoldChargeEnchantVariant2(icon);
+     var hold_charge_touch_variant2 = CreateHoldChargeTouchVariant2(icon);
+     var standard_enchant_variant2 = CreateStandardEnchantVariant2(icon, hold_charge_enchant_variant2);
+     var standard_touch_variant2 = CreateStandardTouchVariant2(icon, hold_charge_touch_variant2);
+
+     // STEP 2: Assemble the parts and assign to the main class-level variable.
+     frost_bite2 = Common.createVariantWrapper(
+         "FrostbiteAbility2",
+         "c1b012f512244249b57d5526d70e53a4", // Frostbite_Wrapper2 GUID
+         standard_touch_variant2,
+         standard_enchant_variant2,
+         hold_charge_touch_variant2,
+         hold_charge_enchant_variant2
+     );
+
+     // STEP 3: Now that `frost_bite2` exists, modify it.
+     frost_bite2.SetName("Frostbite II"); // Renamed for clarity
+     frost_bite2.SetDescription("Choose a method to deliver Frostbite's chilling power. Standard versions have a longer range and include an immediate attack. Hold Charge versions are cast on yourself, allowing you to act before delivering the effect.");
+     frost_bite2.SetIcon(icon);
+     frost_bite2.SpellResistance = true;
+     frost_bite2.AddComponent(Helpers.CreateSpellComponent(SpellSchool.Transmutation));
+
+     frost_bite2.AvailableMetamagic = Metamagic.Extend | Metamagic.Quicken | Metamagic.Heighten | Metamagic.Empower | Metamagic.Maximize | (Metamagic)MetamagicFeats.MetamagicExtender.Dazing | (Metamagic)MetamagicFeats.MetamagicExtender.Rime | (Metamagic)MetamagicFeats.MetamagicExtender.Elemental;
+
+     // STEP 4: Finally, add the completed spell to the game's spell lists.
+     frost_bite2.AddToSpellList(Helpers.druidSpellList, 1);
+     frost_bite2.AddToSpellList(Helpers.magusSpellList, 1);
+     // We can create a scroll for this one if we want, as it's separate from the dependency.
+     frost_bite2.AddSpellAndScroll("1cd597e316ac49941a568312de2be6ae"); //acid maw
+ }
+
+ private static ActionList CreateFrostbiteHitActions2()
+ {
+     var fatigued = library.Get<BlueprintBuff>("e6f2fc5d73d88064583cb828801212f4");
+     return Helpers.CreateActionList(
+         Common.createContextActionApplyBuff(fatigued, Helpers.CreateContextDuration(1, DurationRate.Minutes), is_child: true, is_from_spell: true),
+         Helpers.CreateActionDealDamage(DamageEnergyType.Cold, Helpers.CreateContextDiceValue(DiceType.D6, 1, Helpers.CreateContextValue(AbilityRankType.DamageBonus)))
+     );
+ }
+
+ private static BlueprintAbility CreateStandardTouchVariant2(Sprite icon, BlueprintAbility hold_charge_base)
+ {
+     var standard_touch = library.CopyAndAdd(hold_charge_base, "FrostbiteStandardTouchAbility2", "d7a4d4129b8b42c2a934ba5203b1e35b"); // Frostbite_Standard_Touch2 GUID
+     standard_touch.SetName("Frostbite II (Touch Attack)");
+     standard_touch.Range = AbilityRange.DoubleMove;
+     standard_touch.AddComponent(Helpers.CreateRunActions(Common.createContextActionForceAttack()));
+     standard_touch.SpellResistance = true;
+     return standard_touch;
+ }
+
+ private static BlueprintAbility CreateStandardEnchantVariant2(Sprite icon, BlueprintAbility hold_charge_base)
+ {
+     var standard_enchant = library.CopyAndAdd(hold_charge_base, "FrostbiteStandardEnchantAbility2", "a8e988f57f4349ec8c6395368a53531a"); // Frostbite_Standard_Enchant2 GUID
+     standard_enchant.SetName("FrostbiteTarget Regular AC");
+     standard_enchant.Range = AbilityRange.DoubleMove;
+     var buff_to_apply = hold_charge_base.GetComponent<AbilityEffectRunAction>().Actions.Actions.OfType<ContextActionApplyBuff>().First().Buff;
+     standard_enchant.ReplaceComponent<AbilityEffectRunAction>(
+         Helpers.CreateRunActions(
+             Helpers.Create<ContextActionOnContextCaster>(c => c.Actions = Helpers.CreateActionList(
+                 Common.createContextActionApplyBuff(buff_to_apply, Helpers.CreateContextDuration(10, DurationRate.Minutes), is_from_spell: true))
+             ),
+             Common.createContextActionForceAttack()
+         )
+     );
+     standard_enchant.SpellResistance = true;
+     standard_enchant.AddComponent(Helpers.Create<AbilityCasterUnarmedOrNaturalChecker>());
+     return standard_enchant;
+ }
+
+ private static BlueprintAbility CreateHoldChargeTouchVariant2(Sprite icon)
+ {
+     var delivered_touch = CreateDeliveredTouchEffect2(icon);
+     var hold_charge_touch = Helpers.CreateTouchSpellCast(delivered_touch);
+     hold_charge_touch.name = "FrostbiteHoldChargeTouchAbility2$" + delivered_touch.name;
+     library.AddAsset(hold_charge_touch, "21a18220f83041b38e4413158c3b88b3"); // Frostbite_Hold_Charge_Touch2 GUID
+     hold_charge_touch.SetName("Frostbite II (Hold Charge Touch)");
+     hold_charge_touch.SetDescription("Imbue your hand with cold, holding one charge per caster level for future touch attacks.");
+     hold_charge_touch.Range = AbilityRange.Personal;
+     hold_charge_touch.AddComponents(
+         Helpers.Create<StickyTouchMechnics.AbilityEffectStickyTouchMultiple>(a => {
+             a.num_charges = Helpers.CreateContextValue(AbilityRankType.Default);
+         }),
+         Helpers.CreateContextRankConfig(baseValueType: ContextRankBaseValueType.CasterLevel, type: AbilityRankType.Default)
+     );
+     hold_charge_touch.SpellResistance = true;
+     return hold_charge_touch;
+ }
+
+ private static BlueprintAbility CreateHoldChargeEnchantVariant2(Sprite icon)
+ {
+     var enchant_buff = CreateFrostbiteEnchantBuff2(icon);
+     var hold_charge_enchant = Helpers.CreateAbility("FrostbiteHoldChargeEnchantAbility2",
+         "Frostbite II (Enchant Attacks)", "...", "1b82143f7734493b82a0d5c34a2e58a8", // Frostbite_Hold_Charge_AC2 GUID
+         icon, AbilityType.Spell, UnitCommand.CommandType.Standard, AbilityRange.Personal,
+         "10 minutes/level", Helpers.savingThrowNone,
+         Helpers.CreateRunActions(Common.createContextActionApplyBuff(enchant_buff, Helpers.CreateContextDuration(10, DurationRate.Minutes), is_from_spell: true)),
+         Helpers.CreateSpellComponent(SpellSchool.Transmutation),
+         Helpers.Create<AbilityCasterUnarmedOrNaturalChecker>(),
+         Helpers.CreateSpellDescriptor(SpellDescriptor.Cold)
+     );
+     hold_charge_enchant.SpellResistance = true;
+     return hold_charge_enchant;
+ }
+
+ private static BlueprintBuff CreateFrostbiteEnchantBuff2(Sprite icon)
+ {
+     var buff = Helpers.CreateBuff("FrostbiteEnchantAttacksBuff2", "Frostbite Enchantment II", "...", "5e2b023f0d2c42b294e7dfc878e10b1b", icon, null); // Frostbite_Enchant_Buff2 GUID
+     var enchantments = new BlueprintWeaponEnchantment[11];
+     for (int i = 0; i < enchantments.Length; i++)
+     {
+         var hit_effects_component = Common.createAddInitiatorAttackWithWeaponTrigger(CreateFrostbiteHitActions2());
+         var reduce_duration_component = Helpers.Create<NewMechanics.EnchantmentMechanics.ActionOnAttackWithEnchantedWeapon>(a => {
+             a.ActionsOnSelf = Helpers.CreateActionList(Helpers.Create<ContextActionReduceBuffDuration>(c => { c.TargetBuff = buff; c.DurationValue = Helpers.CreateContextDuration(1, DurationRate.Minutes); }));
+             a.only_on_hit = true;
+         });
+         enchantments[i] = Common.createWeaponEnchantment(
+             $"Frostbite{i}Enchantment2", "Frostbite II", "", "", "",
+             $"f3c0b267-dd17-42a4-805e-31fe3cd1c1{i:d2}", // Frostbite_Weapon_Enchantment2_00, etc. GUID
+             0, null, hit_effects_component, reduce_duration_component);
+     }
+     var enchant_logic = Common.createBuffContextEnchantPrimaryHandWeapon(Helpers.CreateContextValue(AbilityRankType.Default), false, true, new BlueprintWeaponType[0], enchantments);
+     var empower_logic = Common.createBuffContextEnchantPrimaryHandWeaponIfHasMetamagic(Metamagic.Empower, false, true, new BlueprintWeaponType[0], WeaponEnchantments.empower_enchant);
+     var maximize_logic = Common.createBuffContextEnchantPrimaryHandWeaponIfHasMetamagic(Metamagic.Maximize, false, true, new BlueprintWeaponType[0], WeaponEnchantments.maximize_enchant);
+     buff.AddComponents(enchant_logic, empower_logic, maximize_logic,
+         Helpers.CreateContextRankConfig(baseValueType: ContextRankBaseValueType.CasterLevel, max: 10, progression: ContextRankProgression.AsIs, type: AbilityRankType.Default),
+         Helpers.CreateContextRankConfig(baseValueType: ContextRankBaseValueType.CasterLevel, progression: ContextRankProgression.DivStep, type: AbilityRankType.DamageBonus, stepLevel: 1, max: 10)
+     );
+     return buff;
+ }
+
+ private static BlueprintAbility CreateDeliveredTouchEffect2(Sprite icon)
+ {
+     var frigid_touch_fx = library.Get<BlueprintAbility>("c83447189aabc72489164dfc246f3a36").GetComponent<AbilitySpawnFx>();
+     var delivered_touch = Helpers.CreateAbility("FrostbiteTouchDelivered2", "Frostbite Touch II", "...",
+         "4fde40f4735c45a4892c896911ed9f95", // This MUST be a real GUID, different from the first one
+         icon, AbilityType.SpellLike, UnitCommand.CommandType.Standard, AbilityRange.Touch, "", "",
+         Helpers.CreateRunActions(CreateFrostbiteHitActions2().Actions),
+         Helpers.CreateContextRankConfig(baseValueType: ContextRankBaseValueType.CasterLevel, progression: ContextRankProgression.DivStep, type: AbilityRankType.DamageBonus, stepLevel: 1, max: 10),
+         Helpers.CreateDeliverTouch(),
+         frigid_touch_fx
+     );
+     delivered_touch.SpellResistance = true;
+     delivered_touch.setMiscAbilityParametersTouchHarmful();
+     return delivered_touch;
+ }
+
+ public class AbilityCasterUnarmedOrNaturalChecker : BlueprintComponent, IAbilityCasterChecker
+ {
+     public bool CorrectCaster(UnitEntityData caster)
+     {
+         if (caster == null)
+             return false;
+
+         // If polymorphed and hands were disabled by polymorph, allow (e.g. no "hand slots" present)
+         // Body.HandsAreEnabled is set to false by polymorph when no hands exist.
+         if (!caster.Body.HandsAreEnabled)
+             return true;
+
+         // If any additional limbs (polymorph or buff) exist and they have natural weapons,
+         // that's acceptable: look for any additional limb slot with a natural weapon.
+         var additional = caster.Body.AdditionalLimbs;
+         if (additional != null && additional.Any(slot =>
+         {
+             var w = slot.MaybeWeapon;
+             return w != null && w.Blueprint.IsNatural;
+         }))
+         {
+             return true;
+         }
+
+         // Now check primary and secondary hand slots: if they have a manufactured (non-natural) weapon -> FAIL
+         var primary = caster.Body.PrimaryHand?.MaybeWeapon;
+         if (primary != null && !primary.Blueprint.IsNatural)
+             return false;
+
+         var secondary = caster.Body.SecondaryHand?.MaybeWeapon;
+         if (secondary != null && !secondary.Blueprint.IsNatural)
+             return false;
+
+         // Also allow empty hands (unarmed) or natural weapons in hands
+         return true;
+     }
+     public string GetReason()
+     {
+         return "You must be unarmed or using natural attacks (or be in a form with no hands).";
+     }
+ }
+
+ static void createFrostBite()
+ {
+     var icon = LoadIcons.Image2Sprite.Create(@"AbilityIcons/FrostBite.png");
+
+     BlueprintWeaponEnchantment[] frost_bite_enchantments = new BlueprintWeaponEnchantment[11];
+     var cold_damage = Common.createEnergyDamageDescription(Kingmaker.Enums.Damage.DamageEnergyType.Cold);
+
+     var frost_enchant = library.Get<BlueprintWeaponEnchantment>("421e54078b7719d40915ce0672511d0b");
+     touch_slam_cold = library.CopyAndAdd<BlueprintWeaponType>("f18cbcb39a1b35643a8d129b1ec4e716", "TouchSlamColdType", "");//slam
+     touch_slam_cold.Category = WeaponCategory.Touch;
+     Helpers.SetField(touch_slam_cold, "m_IsTwoHanded", false);
+
+     var damage_type = new DamageTypeDescription()
+     {
+         Type = DamageType.Energy,
+         Energy = DamageEnergyType.Cold,
+         Common = new DamageTypeDescription.CommomData(),
+         Physical = new DamageTypeDescription.PhysicalData()
+     };
+
+     Helpers.SetField(touch_slam_cold, "m_DamageType", damage_type);
+     Helpers.SetField(touch_slam_cold, "m_TypeNameText", Helpers.CreateString("TouchSlamColdName", "Touch"));
+     Helpers.SetField(touch_slam_cold, "m_DefaultNameText", Helpers.CreateString("TouchSlamColdName", "Touch"));
+
+
+     var weapon = library.CopyAndAdd<BlueprintItemWeapon>("767e6932882a99c4b8ca95c88d823137", "FrostBiteWeapon", "");//sling
+     Helpers.SetField(weapon, "m_Type", touch_slam_cold);
+     Helpers.SetField(weapon, "m_DisplayNameText", Helpers.CreateString("FrostBiteWeaponName", "Frost Bite"));
+     Helpers.SetField(weapon, "m_Icon", icon);
+     Common.addEnchantment(weapon, WeaponEnchantments.summoned_weapon_enchant);
+
+     var fatigued = library.Get<BlueprintBuff>("e6f2fc5d73d88064583cb828801212f4");
+     var apply_fatigued = Common.createContextActionApplyBuff(fatigued, Helpers.CreateContextDuration(1, DurationRate.Minutes), is_child: true);
+
+     for (int i = 0; i < frost_bite_enchantments.Length; i++)
+     {
+         var frost_bite_enchant = Helpers.Create<NewMechanics.EnchantmentMechanics.WeaponDamageChange>(w =>
+         {
+             w.bonus_damage = 1 + i;
+             w.dice_formula = new DiceFormula(1, DiceType.D6);
+             w.damage_type_description = cold_damage;
+         });
+
+         frost_bite_enchantments[i] = Common.createWeaponEnchantment($"FrostBite{i}Enchantment",
+                                                                      "Frostbite",
+                                                                      "Your melee touch attack deals 1d6 points of cold damage + 1 point per level (maximum + 10), and the target is fatigued for 1 minute. This spell cannot make a creature exhausted even if it is already fatigued. Each attack you make reduces the remaining duration of the spell by 1 minute.\n"
+                                                                      + "Your primary hand must be free when you cast this spell.",
+                                                                      "",
+                                                                      "",
+                                                                      "",
+                                                                      0,
+                                                                      frost_enchant.WeaponFxPrefab,
+                                                                      Helpers.Create<NewMechanics.EnchantmentMechanics.Immaterial>(),
+                                                                      Helpers.Create<NewMechanics.EnchantmentMechanics.NoDamageScalingEnchant>(),
+                                                                      frost_bite_enchant,
+                                                                      Common.createAddInitiatorAttackWithWeaponTrigger(Helpers.CreateActionList(apply_fatigued))
+                                                                      );
+     }
+
+
+     var empower_buff = Common.createBuffContextEnchantPrimaryHandWeaponIfHasMetamagic(Kingmaker.UnitLogic.Abilities.Metamagic.Empower,
+                                                                                           false, false,
+                                                                                           new BlueprintWeaponType[0], WeaponEnchantments.empower_enchant);
+
+     var maximize_buff = Common.createBuffContextEnchantPrimaryHandWeaponIfHasMetamagic(Kingmaker.UnitLogic.Abilities.Metamagic.Maximize,
+                                                                                           false, false,
+                                                                                           new BlueprintWeaponType[0], WeaponEnchantments.maximize_enchant);
+     /*
+     var fire_buff = Common.createBuffContextEnchantPrimaryHandWeaponIfHasMetamagic((Metamagic)MetamagicFeats.MetamagicExtender.ElementalFire,
+                                                            false, false,
+                                                            new BlueprintWeaponType[0], WeaponEnchantments.elemental_enchants[DamageEnergyType.Fire]);
+     var acid_buff = Common.createBuffContextEnchantPrimaryHandWeaponIfHasMetamagic((Metamagic)MetamagicFeats.MetamagicExtender.ElementalAcid,
+                                                                                   false, false,
+                                                                                   new BlueprintWeaponType[0], WeaponEnchantments.elemental_enchants[DamageEnergyType.Acid]);
+     var elec_buff = Common.createBuffContextEnchantPrimaryHandWeaponIfHasMetamagic((Metamagic)MetamagicFeats.MetamagicExtender.ElementalElectricity,
+                                                                                   false, false,
+                                                                                   new BlueprintWeaponType[0], WeaponEnchantments.elemental_enchants[DamageEnergyType.Electricity]);
+     */
+     var buff = Helpers.CreateBuff("FrostBiteBuff",
+                                     frost_bite_enchantments[0].Name + " (As Weapon)",
+                                     frost_bite_enchantments[0].Description,
+                                     "",
+                                     icon,
+                                     null,
+                                     Helpers.Create<NewMechanics.EnchantmentMechanics.CreateWeapon>(c => { c.weapon = weapon; }),
+                                     Common.createBuffContextEnchantPrimaryHandWeapon(Helpers.CreateContextValue(AbilityRankType.DamageBonus), false, false,
+                                                                                     new BlueprintWeaponType[0], frost_bite_enchantments),
+                                     empower_buff,
+                                     maximize_buff,
+                                     //fire_buff,
+                                     //acid_buff,
+                                     //elec_buff,
+                                     Helpers.CreateContextRankConfig(baseValueType: ContextRankBaseValueType.CasterLevel, progression: ContextRankProgression.DivStep,
+                                                                     type: AbilityRankType.DamageBonus, stepLevel: 1, max: 10)
+                                     );
+     buff.Stacking = Kingmaker.UnitLogic.Buffs.Blueprints.StackingType.Replace;
+     weapon.AddComponent(Helpers.Create<NewMechanics.EnchantmentMechanics.WeaponSourceBuff>(w => w.buff = buff));
+
+     var reduce_buff_duration = Helpers.Create<ContextActionReduceBuffDuration>(c => { c.TargetBuff = buff; c.DurationValue = Helpers.CreateContextDuration(1, DurationRate.Minutes); });
+     foreach (var e in frost_bite_enchantments)
+     {
+         e.AddComponent(Helpers.Create<NewMechanics.EnchantmentMechanics.ActionOnAttackWithEnchantedWeapon>(a => { a.ActionsOnSelf = Helpers.CreateActionList(reduce_buff_duration); a.only_on_hit = true; }));
+     }
+
+     var apply_buff = Common.createContextActionApplyBuff(buff, Helpers.CreateContextDuration(Helpers.CreateContextValue(AbilityRankType.Default), DurationRate.Minutes), is_from_spell: true);
+     var frost_bite_weapon = Helpers.CreateAbility("FrostBiteWeaponAbility",
+                                           buff.Name,
+                                           buff.Description,
+                                           "",
+                                           buff.Icon,
+                                           AbilityType.Spell,
+                                           Kingmaker.UnitLogic.Commands.Base.UnitCommand.CommandType.Standard,
+                                           AbilityRange.DoubleMove,
+                                           Helpers.minutesPerLevelDuration,
+                                           Helpers.savingThrowNone,
+                                           Helpers.CreateRunActions(Common.createContextActionForceAttack()),
+                                           Helpers.CreateSpellComponent(Kingmaker.Blueprints.Classes.Spells.SpellSchool.Transmutation),
+                                           Helpers.Create<NewMechanics.AbilityCasterPrimaryHandFree>(),
+                                           Helpers.CreateSpellDescriptor(SpellDescriptor.Cold),
+                                           Common.createAbilityExecuteActionOnCast(Helpers.CreateActionList(Common.createContextActionOnContextCaster(apply_buff)))
+                                           );
+     frost_bite_weapon.setMiscAbilityParametersTouchHarmful();
+
+     frost_bite_weapon.AvailableMetamagic = Kingmaker.UnitLogic.Abilities.Metamagic.Extend | Kingmaker.UnitLogic.Abilities.Metamagic.Heighten | Kingmaker.UnitLogic.Abilities.Metamagic.Empower | Kingmaker.UnitLogic.Abilities.Metamagic.Maximize | (Metamagic)MetamagicFeats.MetamagicExtender.Dazing | (Metamagic)MetamagicFeats.MetamagicExtender.Rime | (Metamagic)MetamagicFeats.MetamagicExtender.Elemental;
+
+     var frost_bite_charge = Helpers.CreateAbility("FrostBiteChargeAbility",
+                               "Frostbite",
+                               "Your melee touch attack deals 1d6 points of cold damage + 1 point per level (max + 10), and the target is fatigued. This spell cannot make a creature exhausted even if it is already fatigued. You can use this melee touch attack up to one time per caster level.",
+                               "",
+                               buff.Icon,
+                               AbilityType.Spell,
+                               Kingmaker.UnitLogic.Commands.Base.UnitCommand.CommandType.Standard,
+                               AbilityRange.Touch,
+                               "",
+                               Helpers.savingThrowNone,
+                               Helpers.CreateRunActions(apply_fatigued, Helpers.CreateActionDealDamage(DamageEnergyType.Cold, Helpers.CreateContextDiceValue(DiceType.D6, 1, Helpers.CreateContextValue(AbilityRankType.DamageBonus)))),
+                               Helpers.CreateContextRankConfig(baseValueType: ContextRankBaseValueType.CasterLevel, progression: ContextRankProgression.DivStep,
+                                                                     type: AbilityRankType.DamageBonus, stepLevel: 1, max: 10),
+                               Helpers.CreateSpellComponent(Kingmaker.Blueprints.Classes.Spells.SpellSchool.Transmutation),
+                               Helpers.CreateSpellDescriptor(SpellDescriptor.Cold),
+                               Helpers.CreateDeliverTouch(),
+                               library.Get<BlueprintAbility>("c83447189aabc72489164dfc246f3a36").GetComponent<AbilitySpawnFx>() //from frigid touch
+                               );
+
+     frost_bite_charge.AvailableMetamagic = frost_bite_weapon.AvailableMetamagic;
+     frost_bite_charge.setMiscAbilityParametersTouchHarmful();
+     var frost_bite_sticky = Helpers.CreateTouchSpellCast(frost_bite_charge);
+     frost_bite_sticky.AddComponents(Helpers.Create<StickyTouchMechnics.AbilityEffectStickyTouchMultiple>(a => a.num_charges = Helpers.CreateContextValue(AbilityRankType.ProjectilesCount)),
+                          Helpers.CreateContextRankConfig(type: AbilityRankType.ProjectilesCount)
+                          );
+
+     frost_bite = Common.createVariantWrapper("FrostBiteAbility", "", frost_bite_sticky, frost_bite_weapon);
+     frost_bite.AddComponent(frost_bite_charge.GetComponent<SpellComponent>());
+     frost_bite.AddToSpellList(Helpers.druidSpellList, 1);
+     frost_bite.AddToSpellList(Helpers.magusSpellList, 1);
+     frost_bite.AddSpellAndScroll("1cd597e316ac49941a568312de2be6ae"); //acid maw
+ }
+
